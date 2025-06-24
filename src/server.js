@@ -1,37 +1,53 @@
 const express = require('express');
+const puppeteer = require('puppeteer');
+const fs = require('fs');
+const Wappalyzer = require('../src/drivers/npm'); // Adjust path if needed
+
 const app = express();
-const port = 3000;
+const PORT = 3000;
 
-// Simple route to check service status
-app.get('/', (req, res) => {
-  res.send('WebAppAnalyzer is running.');
-});
-
-// Placeholder analyze route
 app.get('/analyze', async (req, res) => {
   const url = req.query.url;
+  if (!url) return res.status(400).json({ error: 'Missing URL' });
 
-  if (!url) {
-    return res.status(400).json({ error: 'Missing ?url= query parameter' });
-  }
+  const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
+  const page = await browser.newPage();
 
   try {
-    // TODO: Replace this block with actual detection logic from the repo
-    // e.g. run puppeteer + tech detector here
-    const mockResult = {
-      url,
-      technologies: [
-        { name: "Express", version: "4.x", category: "Web Framework" },
-        { name: "Node.js", version: "18.x", category: "Platform" }
-      ]
-    };
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    res.json(mockResult);
+    const headers = await page.evaluate(() => {
+      return JSON.parse(JSON.stringify(performance.getEntriesByType('navigation')[0].serverTiming || {}));
+    });
+
+    const html = await page.content();
+    const jsVariables = await page.evaluate(() => Object.keys(window));
+
+    const wappalyzer = new Wappalyzer();
+
+    await wappalyzer.init();
+
+    const site = await wappalyzer.open(url, {
+      html,
+      headers: page._client._connection._transport._ws ? {} : headers, // fallback if needed
+      scripts: [], // optional: scrape with page.evaluate if needed
+      js: jsVariables
+    });
+
+    const results = await site.analyze();
+
+    await browser.close();
+
+    res.json({
+      url,
+      technologies: results.technologies
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Analysis failed', details: err.message });
+    await browser.close();
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(port, () => {
-  console.log(`WebAppAnalyzer API running at http://localhost:${port}`);
+app.listen(PORT, () => {
+  console.log(`WebAppAnalyzer API running at http://localhost:${PORT}`);
 });
