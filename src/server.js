@@ -48,6 +48,10 @@ app.get('/analyze', async (req, res) => {
   }
 });
 
+app.get('/', (req, res) => {
+  res.send('WebAppAnalyzer API is running.');
+});
+
 app.listen(PORT, () => {
   console.log(`WebAppAnalyzer API running at http://localhost:${PORT}`);
 });
